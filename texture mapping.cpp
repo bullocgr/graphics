@@ -11,10 +11,10 @@
 #include "glew.h"
 #endif
 
+
 #include <OpenGL/gl.h>
 #include <OpenGL/glu.h>
 #include <GLUT/glut.h>
-
 
 
 //	This is a sample OpenGL / GLUT program
@@ -44,7 +44,7 @@
 
 // title of these windows:
 
-const char *WINDOWTITLE = { "OpenGL / GLUT Sample -- Joe Graphics" };
+const char *WINDOWTITLE = { "OpenGL / GLUT Sample -- Grace Bullock" };
 const char *GLUITITLE   = { "User Interface Window" };
 
 
@@ -174,27 +174,26 @@ const GLfloat FOGEND      = { 4. };
 
 int		ActiveButton;			// current button that is down
 GLuint	AxesList;				// list to hold the axes
+int		TextureOn;
+int		DistortOn;
 int		AxesOn;					// != 0 means to draw the axes
 int		DebugOn;				// != 0 means to print debugging info
 int		DepthCueOn;				// != 0 means to use intensity depth cueing
 int		DepthBufferOn;			// != 0 means to use the z-buffer
 int		DepthFightingOn;		// != 0 means to use the z-buffer
-GLuint	topBlade;				// top blade
-GLuint  backBlade;				// back blade
-GLuint  helicopter;				// helicopter
-GLuint  view;					// view from the cockpit
+GLuint	BoxList;				// object display list
 int		MainWindow;				// window id for main graphics window
 float	Scale;					// scaling factor
 int		WhichColor;				// index into Colors[ ]
 int		WhichProjection;		// ORTHO or PERSP
-int 	inside;					//inside of the cockpit menu
 int		Xmouse, Ymouse;			// mouse values
 float	Xrot, Yrot;				// rotation angles in degrees
-float	bladeAngle;
-#define BLADE_RADIUS	 1.0
-#define BLADE_WIDTH		 0.4
-
-#include "heli.550"
+GLuint  tex0;					//texture that I'll use
+int 	MS_PER_CYCLE = 1000;	//milliseconds per animation cycle
+float 	Time;
+float	s = (0+M_PI )/(2.*M_PI);
+float	t = (0+M_PI/2.)/M_PI;
+	
 
 
 // function prototypes:
@@ -202,6 +201,8 @@ float	bladeAngle;
 void	Animate( );
 void	Display( );
 void	DoAxesMenu( int );
+void	DoTextureMenu( int );
+void	DoDistortMenu( int );
 void	DoColorMenu( int );
 void	DoDepthBufferMenu( int );
 void	DoDepthFightingMenu( int );
@@ -209,7 +210,6 @@ void	DoDepthMenu( int );
 void	DoDebugMenu( int );
 void	DoMainMenu( int );
 void	DoProjectMenu( int );
-void	DoViewMenu( int );
 void	DoRasterString( float, float, float, char * );
 void	DoStrokeString( float, float, float, float, char * );
 float	ElapsedSeconds( );
@@ -225,8 +225,50 @@ void	Visibility( int );
 
 void	Axes( float );
 void	HsvRgb( float[3], float [3] );
-void	Cross( float[3], float[3], float[3] );
-float	Unit( float[3], float[3] );
+
+int	ReadInt( FILE * );
+short	ReadShort( FILE * );
+unsigned char * BmpToTexture( char *filename, int *width, int *height );
+void DrawPoint( struct point *p );
+void MjbSphere( float radius, int slices, int stacks );
+struct point * PtsPointer( int lat, int lng );
+bool	Distort;
+
+struct bmfh
+{
+	short bfType;
+	int bfSize;
+	short bfReserved1;
+	short bfReserved2;
+	int bfOffBits;
+} FileHeader;
+
+struct bmih
+{
+	int biSize;
+	int biWidth;
+	int biHeight;
+	short biPlanes;
+	short biBitCount;
+	int biCompression;
+	int biSizeImage;
+	int biXPelsPerMeter;
+	int biYPelsPerMeter;
+	int biClrUsed;
+	int biClrImportant;
+} InfoHeader;
+
+const int birgb = { 0 };
+
+struct point {
+	float x, y, z;		// coordinates
+	float nx, ny, nz;	// surface normal
+	float s, t;		// texture coords
+};
+
+int		NumLngs, NumLats;
+struct point *	Pts;
+
 
 // main program:
 
@@ -288,16 +330,18 @@ Animate( )
 	// for Display( ) to find:
 
 	// force a call to Display( ) next time it is convenient:
-	bladeAngle+=5;
+
+	int ms = glutGet( GLUT_ELAPSED_TIME );
+	ms %= MS_PER_CYCLE;
+	Time = (float)ms / (float)MS_PER_CYCLE;		// [0.,1.)
+	// s = (lng+M_PI )/(2.*M_PI);
+	// t = (lat+M_PI/2.)/M_PI;
+	// glTexCoord2f( s, t );
+	// glNormal3f( 0, 0, 0 );
+	// glVertex3f( 0, 0, 0 );
+        
 	glutSetWindow( MainWindow );
 	glutPostRedisplay( );
-	// float Time;
-	// #define MS_IN_THE_ANIMATION_CYCLE	10000
-
-	// int ms = glutGet( GLUT_ELAPSED_TIME );	// milliseconds
-	// ms  %=  MS_IN_THE_ANIMATION_CYCLE;
-	// Time = (float)ms  /  (float)MS_IN_THE_ANIMATION_CYCLE;        // [ 0., 1. )
-
 }
 
 
@@ -364,19 +408,13 @@ Display( )
 
 	// set the eye position, look-at position, and up-vector:
 
-	if(inside != 1) {
-		gluLookAt( 10., 5., 15.,     0., 0., 0.,     0., 1., 0. );
-		glRotatef( (GLfloat)Yrot, 0., 1., 0. );
-		glRotatef( (GLfloat)Xrot, 1., 0., 0. );
-	}
-	else {
-		gluLookAt( 0., 1.7, -4., 0.,0.,-7., 0., 1., 0.);
-	}
+	gluLookAt( 0., 0., 3.,     0., 0., 0.,     0., 1., 0. );
 
 
 	// rotate the scene:
 
-	
+	glRotatef( (GLfloat)Yrot, 0., 1., 0. );
+	glRotatef( (GLfloat)Xrot, 1., 0., 0. );
 
 
 	// uniformly scale the scene:
@@ -417,48 +455,43 @@ Display( )
 	glEnable( GL_NORMALIZE );
 
 
-	//draw the helicopter
-
-	glCallList( helicopter );
-
-
-	//draw the view from the cockpit
-
-	glCallList( view );
-
-
 	// draw the current object:
 
-	glPushMatrix();
-	glScalef(5.0,5.0, 5.);
-	glTranslatef(0.,0.58,-.4);	
-	glRotatef( (GLfloat)bladeAngle,   0., 1., 0. );
-	glRotatef( 90, 1.,0.,0. );
-	glCallList( topBlade );
-	glPopMatrix();
+	// MjbSphere( 1., 80., 80. );
+	if( TextureOn == 0 && DistortOn == 0) {
+		MjbSphere( 1., 80., 80. );
+	}
 
-	glPushMatrix();
-	glScalef(1.5,1.5,1.5);
-	glTranslatef(.33,1.66,6);
-	glRotatef( (GLfloat)bladeAngle*3, 1.,0.,0.);
-	glRotatef( 90, 0.,1.,0. );
-	glRotatef( 90, 0.,0.,1. );
-	glCallList( backBlade );
-	glPopMatrix();
+	if( TextureOn != 0 ) {
+		glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
+		glEnable(GL_TEXTURE_2D);
+		
+		glBindTexture(GL_TEXTURE_2D, tex0);
+
+		// if( DistortOn != 0 ) {
+			
+		// 	// glRotatef( 360.*Time, 0., 1., 0. );
+		// }
+
+		MjbSphere( 1., 80., 80. );
+		glDisable(GL_TEXTURE_2D);
+	}
+
 
 	if( DepthFightingOn != 0 )
 	{
 		glPushMatrix( );
-			glCallList( topBlade );
+			glRotatef( 90.,   0., 1., 0. );
+			glCallList( BoxList );
 		glPopMatrix( );
 	}
 
 
 	// draw some gratuitous text that just rotates on top of the scene:
 
-	// glDisable( GL_DEPTH_TEST );
-	// glColor3f( 0., 1., 1. );
-	// DoRasterString( 0., 1., 0., "Text That Moves" );
+	glDisable( GL_DEPTH_TEST );
+	glColor3f( 0., 1., 1. );
+	DoRasterString( 0., 1., 0., "Text That Moves" );
 
 
 	// draw some gratuitous text that is fixed on the screen:
@@ -471,14 +504,14 @@ Display( )
 	// the modelview matrix is reset to identity as we don't
 	// want to transform these coordinates
 
-	// glDisable( GL_DEPTH_TEST );
-	// glMatrixMode( GL_PROJECTION );
-	// glLoadIdentity( );
-	// gluOrtho2D( 0., 100.,     0., 100. );
-	// glMatrixMode( GL_MODELVIEW );
-	// glLoadIdentity( );
-	// glColor3f( 1., 1., 1. );
-	// DoRasterString( 5., 5., 0., "Text That Doesn't" );
+	glDisable( GL_DEPTH_TEST );
+	glMatrixMode( GL_PROJECTION );
+	glLoadIdentity( );
+	gluOrtho2D( 0., 100.,     0., 100. );
+	glMatrixMode( GL_MODELVIEW );
+	glLoadIdentity( );
+	glColor3f( 1., 1., 1. );
+	DoRasterString( 5., 5., 0., "Text That Doesn't" );
 
 
 	// swap the double-buffered framebuffers:
@@ -552,6 +585,24 @@ DoDepthMenu( int id )
 	glutPostRedisplay( );
 }
 
+void
+DoTextureMenu( int id )
+{
+	TextureOn = id;
+
+	glutSetWindow( MainWindow );
+	glutPostRedisplay( );
+}
+
+void
+DoDistortMenu( int id )
+{
+	DistortOn = id;
+
+	glutSetWindow( MainWindow );
+	glutPostRedisplay( );
+}
+
 
 // main menu callback:
 
@@ -587,15 +638,6 @@ void
 DoProjectMenu( int id )
 {
 	WhichProjection = id;
-
-	glutSetWindow( MainWindow );
-	glutPostRedisplay( );
-}
-
-void
-DoViewMenu( int id )
-{
-	inside = id;
 
 	glutSetWindow( MainWindow );
 	glutPostRedisplay( );
@@ -688,9 +730,13 @@ InitMenus( )
 	glutAddMenuEntry( "Orthographic",  ORTHO );
 	glutAddMenuEntry( "Perspective",   PERSP );
 
-	int viewMenu = glutCreateMenu( DoViewMenu );
-	glutAddMenuEntry( "Outside",  0 );
-	glutAddMenuEntry( "Inside",   1 );
+	int texturemenu = glutCreateMenu( DoTextureMenu );
+	glutAddMenuEntry( "Off",  0 );
+	glutAddMenuEntry( "On",   1 );
+
+	int distortmenu = glutCreateMenu( DoDistortMenu );
+	glutAddMenuEntry( "Off",  0 );
+	glutAddMenuEntry( "On",   1 );
 
 	int mainmenu = glutCreateMenu( DoMainMenu );
 	glutAddSubMenu(   "Axes",          axesmenu);
@@ -699,12 +745,11 @@ InitMenus( )
 	glutAddSubMenu(   "Depth Fighting",depthfightingmenu);
 	glutAddSubMenu(   "Depth Cue",     depthcuemenu);
 	glutAddSubMenu(   "Projection",    projmenu );
+	glutAddSubMenu(	  "Texture",	   texturemenu);
+	glutAddSubMenu(	  "Distortion",	   distortmenu);
 	glutAddMenuEntry( "Reset",         RESET );
 	glutAddSubMenu(   "Debug",         debugmenu);
-	glutAddSubMenu(	  "View",		   viewMenu);
 	glutAddMenuEntry( "Quit",          QUIT );
-	
-
 
 // attach the pop-up menu to the right mouse button:
 
@@ -778,7 +823,7 @@ InitGraphics( )
 	glutTabletButtonFunc( NULL );
 	glutMenuStateFunc( NULL );
 	glutTimerFunc( -1, NULL, 0 );
-	glutIdleFunc(Animate);
+	glutIdleFunc( Animate );
 
 	// init glew (a window must be open to do this):
 
@@ -793,6 +838,23 @@ InitGraphics( )
 	fprintf( stderr, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 #endif
 
+	int x = 1;
+	int y = 1;
+	int* width = &x;
+	int* height = &y;
+	unsigned char *Texture;
+
+	Texture = BmpToTexture("project.bmp", width , height);
+	glGenTextures(1, &tex0);
+	glBindTexture(GL_TEXTURE_2D, tex0);
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+	glTexImage2D( GL_TEXTURE_2D, 0, 3, 256, 128, 0, GL_RGB, GL_UNSIGNED_BYTE, Texture );
+	//look at notes for 
+
 }
 
 
@@ -804,97 +866,7 @@ InitGraphics( )
 void
 InitLists( )
 {
-	float dx = BOXSIZE / 2.f;
-	float dy = BOXSIZE / 2.f;
-	float dz = BOXSIZE / 2.f;
 	glutSetWindow( MainWindow );
-
-	//create the view from the cockpit
-	view = glGenLists( 1 );
-	glNewList( view, GL_COMPILE );
-
-		glBegin( GL_TRIANGLES );
-			glColor3f(0.,0.,1.)
-;			glVertex3f( -5.0, 0.0, -20.0 );
-			glVertex3f( 0.0, 5.0, -20.0 );
-			glVertex3f( 5.0, 0.0, -20.0 );
-		glEnd();
-	glEndList();
-
-	// create the top blades:
-	topBlade = glGenLists( 1 );
-	glNewList( topBlade, GL_COMPILE );
-
-		glBegin( GL_TRIANGLES );
-			glColor3f(1.,1.,1.);
-
-			glVertex2f(  BLADE_RADIUS,  BLADE_WIDTH/2. );
-			glVertex2f(  0., 0. );
-			glVertex2f(  BLADE_RADIUS, -BLADE_WIDTH/2. );
-
-			glVertex2f( -BLADE_RADIUS, -BLADE_WIDTH/2. );
-			glVertex2f(  0., 0. );
-			glVertex2f( -BLADE_RADIUS,  BLADE_WIDTH/2. );
-		glEnd( );
-	glEndList( );
-
-	backBlade = glGenLists( 1 );
-	glNewList( backBlade, GL_COMPILE );
-
-		glBegin( GL_TRIANGLES );
-		glColor3f(1.,1.,1.);
-			glVertex2f(  BLADE_RADIUS,  BLADE_WIDTH/2. );
-			glVertex2f(  0., 0. );
-			glVertex2f(  BLADE_RADIUS, -BLADE_WIDTH/2. );
-
-			glVertex2f( -BLADE_RADIUS, -BLADE_WIDTH/2. );
-			glVertex2f(  0., 0. );
-			glVertex2f( -BLADE_RADIUS,  BLADE_WIDTH/2. );
-		glEnd( );
-	glEndList( );
-
-	//create the helicopter
-	helicopter = glGenLists( 1 );
-	glNewList( helicopter, GL_COMPILE);
-
-		int i;
-		struct point *p0, *p1, *p2;
-		struct tri *tp;
-		float p01[3], p02[3], n[3];
-
-		glPushMatrix( );
-		glTranslatef( 0., -1., 0. );
-		glRotatef(  97.,   0., 1., 0. );
-		glRotatef( -15.,   0., 0., 1. );
-		glBegin( GL_TRIANGLES );
-			for( i=0, tp = Helitris; i < Helintris; i++, tp++ )
-			{
-				p0 = &Helipoints[ tp->p0 ];
-				p1 = &Helipoints[ tp->p1 ];
-				p2 = &Helipoints[ tp->p2 ];
-
-				// fake "lighting" from above:
-
-				p01[0] = p1->x - p0->x;
-				p01[1] = p1->y - p0->y;
-				p01[2] = p1->z - p0->z;
-				p02[0] = p2->x - p0->x;
-				p02[1] = p2->y - p0->y;
-				p02[2] = p2->z - p0->z;
-				Cross( p01, p02, n );
-				Unit( n, n );
-				n[1] = fabs( n[1] );
-				n[1] += .25;
-				if( n[1] > 1. )
-					n[1] = 1.;
-				glColor3f( 0., n[1], 0. );
-
-				glVertex3f( p0->x, p0->y, p0->z );
-				glVertex3f( p1->x, p1->y, p1->z );
-				glVertex3f( p2->x, p2->y, p2->z );
-			}
-		glEnd( );
-		glPopMatrix( );
 
 
 	// create the axes:
@@ -906,7 +878,6 @@ InitLists( )
 		glLineWidth( 1. );
 	glEndList( );
 }
-
 
 
 // the keyboard callback:
@@ -1281,34 +1252,289 @@ HsvRgb( float hsv[3], float rgb[3] )
 	rgb[2] = b;
 }
 
-void
-Cross( float v1[3], float v2[3], float vout[3] )
+unsigned char *
+BmpToTexture( char *filename, int *width, int *height )
 {
-	float tmp[3];
-	tmp[0] = v1[1]*v2[2] - v2[1]*v1[2];
-	tmp[1] = v2[0]*v1[2] - v1[0]*v2[2];
-	tmp[2] = v1[0]*v2[1] - v2[0]*v1[1];
-	vout[0] = tmp[0];
-	vout[1] = tmp[1];
-	vout[2] = tmp[2];
+
+	int s, t, e;		// counters
+	int numextra;		// # extra bytes each line in the file is padded with
+	FILE *fp;
+	unsigned char *texture;
+	int nums, numt;
+	unsigned char *tp;
+
+
+	fp = fopen( filename, "rb" );
+	if( fp == NULL )
+	{
+		fprintf( stderr, "Cannot open Bmp file '%s'\n", filename );
+		return NULL;
+	}
+
+	FileHeader.bfType = ReadShort( fp );
+
+
+	// if bfType is not 0x4d42, the file is not a bmp:
+
+	if( FileHeader.bfType != 0x4d42 )
+	{
+		fprintf( stderr, "Wrong type of file: 0x%0x\n", FileHeader.bfType );
+		fclose( fp );
+		return NULL;
+	}
+
+
+	FileHeader.bfSize = ReadInt( fp );
+	FileHeader.bfReserved1 = ReadShort( fp );
+	FileHeader.bfReserved2 = ReadShort( fp );
+	FileHeader.bfOffBits = ReadInt( fp );
+
+
+	InfoHeader.biSize = ReadInt( fp );
+	InfoHeader.biWidth = ReadInt( fp );
+	InfoHeader.biHeight = ReadInt( fp );
+
+	nums = InfoHeader.biWidth;
+	numt = InfoHeader.biHeight;
+
+	InfoHeader.biPlanes = ReadShort( fp );
+	InfoHeader.biBitCount = ReadShort( fp );
+	InfoHeader.biCompression = ReadInt( fp );
+	InfoHeader.biSizeImage = ReadInt( fp );
+	InfoHeader.biXPelsPerMeter = ReadInt( fp );
+	InfoHeader.biYPelsPerMeter = ReadInt( fp );
+	InfoHeader.biClrUsed = ReadInt( fp );
+	InfoHeader.biClrImportant = ReadInt( fp );
+
+
+	// fprintf( stderr, "Image size found: %d x %d\n", ImageWidth, ImageHeight );
+
+
+	texture = new unsigned char[ 3 * nums * numt ];
+	if( texture == NULL )
+	{
+		fprintf( stderr, "Cannot allocate the texture array!\b" );
+		return NULL;
+	}
+
+
+	// extra padding bytes:
+
+	numextra =  4*(( (3*InfoHeader.biWidth)+3)/4) - 3*InfoHeader.biWidth;
+
+
+	// we do not support compression:
+
+	if( InfoHeader.biCompression != birgb )
+	{
+		fprintf( stderr, "Wrong type of image compression: %d\n", InfoHeader.biCompression );
+		fclose( fp );
+		return NULL;
+	}
+	
+
+
+	rewind( fp );
+	fseek( fp, 14+40, SEEK_SET );
+
+	if( InfoHeader.biBitCount == 24 )
+	{
+		for( t = 0, tp = texture; t < numt; t++ )
+		{
+			for( s = 0; s < nums; s++, tp += 3 )
+			{
+				*(tp+2) = fgetc( fp );		// b
+				*(tp+1) = fgetc( fp );		// g
+				*(tp+0) = fgetc( fp );		// r
+			}
+
+			for( e = 0; e < numextra; e++ )
+			{
+				fgetc( fp );
+			}
+		}
+	}
+
+	fclose( fp );
+
+	*width = nums;
+	*height = numt;
+	return texture;
 }
 
-float
-Unit( float vin[3], float vout[3] )
+
+
+int
+ReadInt( FILE *fp )
 {
-	float dist = vin[0]*vin[0] + vin[1]*vin[1] + vin[2]*vin[2];
-	if( dist > 0.0 )
-	{
-		dist = sqrt( dist );
-		vout[0] = vin[0] / dist;
-		vout[1] = vin[1] / dist;
-		vout[2] = vin[2] / dist;
-	}
-	else
-	{
-		vout[0] = vin[0];
-		vout[1] = vin[1];
-		vout[2] = vin[2];
-	}
-	return dist;
+	unsigned char b3, b2, b1, b0;
+	b0 = fgetc( fp );
+	b1 = fgetc( fp );
+	b2 = fgetc( fp );
+	b3 = fgetc( fp );
+	return ( b3 << 24 )  |  ( b2 << 16 )  |  ( b1 << 8 )  |  b0;
 }
+
+
+short
+ReadShort( FILE *fp )
+{
+	unsigned char b1, b0;
+	b0 = fgetc( fp );
+	b1 = fgetc( fp );
+	return ( b1 << 8 )  |  b0;
+}
+
+struct point *
+PtsPointer( int lat, int lng )
+{
+	if( lat < 0 )	lat += (NumLats-1);
+	if( lng < 0 )	lng += (NumLngs-1);
+	if( lat > NumLats-1 )	lat -= (NumLats-1);
+	if( lng > NumLngs-1 )	lng -= (NumLngs-1);
+	return &Pts[ NumLngs*lat + lng ];
+}
+
+
+
+void
+DrawPoint( struct point *p )
+{
+	glNormal3f( p->nx, p->ny, p->nz );
+	glTexCoord2f( p->s, p->t );
+	glVertex3f( p->x, p->y, p->z );
+}
+
+void
+MjbSphere( float radius, int slices, int stacks )
+{
+	struct point top, bot;		// top, bottom points
+	struct point *p;
+
+	// set the globals:
+
+	NumLngs = slices;
+	NumLats = stacks;
+
+	if( NumLngs < 3 )
+		NumLngs = 3;
+
+	if( NumLats < 3 )
+		NumLats = 3;
+
+
+	// allocate the point data structure:
+
+	Pts = new struct point[ NumLngs * NumLats ];
+
+
+	// fill the Pts structure:
+
+	for( int ilat = 0; ilat < NumLats; ilat++ )
+	{
+		float lat = -M_PI/2.  +  M_PI * (float)ilat / (float)(NumLats-1);
+		float xz = cos( lat );
+		float y = sin( lat );
+		for( int ilng = 0; ilng < NumLngs; ilng++ )
+		{
+			float lng = -M_PI  +  2. * M_PI * (float)ilng / (float)(NumLngs-1);
+			float x =  xz * cos( lng );
+			float z = -xz * sin( lng );
+			p = PtsPointer( ilat, ilng );
+			p->x  = radius * x;
+			p->y  = radius * y;
+			p->z  = radius * z;
+			p->nx = x;
+			p->ny = y;
+			p->nz = z;
+			if( DistortOn )
+			{
+				glRotatef( Time/17., 0., 1., 0. );
+				p->s = ( lng + M_PI    ) / ( 7.*M_PI );
+				p->t = ( lat + M_PI/2. ) / M_PI;
+			}
+			else
+			{
+				p->s = ( lng + M_PI    ) / ( 2.*M_PI );
+				p->t = ( lat + M_PI/2. ) / M_PI;
+			}
+		}
+	}
+
+	top.x =  0.;		top.y  = radius;	top.z = 0.;
+	top.nx = 0.;		top.ny = 1.;		top.nz = 0.;
+	top.s  = 0.;		top.t  = 1.;
+
+	bot.x =  0.;		bot.y  = -radius;	bot.z = 0.;
+	bot.nx = 0.;		bot.ny = -1.;		bot.nz = 0.;
+	bot.s  = 0.;		bot.t  =  0.;
+
+
+	// connect the north pole to the latitude NumLats-2:
+
+	glBegin( GL_QUADS );
+	for( int ilng = 0; ilng < NumLngs-1; ilng++ )
+	{
+		p = PtsPointer( NumLats-1, ilng );
+		DrawPoint( p );
+
+		p = PtsPointer( NumLats-2, ilng );
+		DrawPoint( p );
+
+		p = PtsPointer( NumLats-2, ilng+1 );
+		DrawPoint( p );
+
+		p = PtsPointer( NumLats-1, ilng+1 );
+		DrawPoint( p );
+	}
+	glEnd( );
+
+	// connect the south pole to the latitude 1:
+
+	glBegin( GL_QUADS );
+	for( int ilng = 0; ilng < NumLngs-1; ilng++ )
+	{
+		p = PtsPointer( 0, ilng );
+		DrawPoint( p );
+
+		p = PtsPointer( 0, ilng+1 );
+		DrawPoint( p );
+
+		p = PtsPointer( 1, ilng+1 );
+		DrawPoint( p );
+
+		p = PtsPointer( 1, ilng );
+		DrawPoint( p );
+	}
+	glEnd( );
+
+
+	// connect the other 4-sided polygons:
+
+	glBegin( GL_QUADS );
+	for( int ilat = 2; ilat < NumLats-1; ilat++ )
+	{
+		for( int ilng = 0; ilng < NumLngs-1; ilng++ )
+		{
+			p = PtsPointer( ilat-1, ilng );
+			DrawPoint( p );
+
+			p = PtsPointer( ilat-1, ilng+1 );
+			DrawPoint( p );
+
+			p = PtsPointer( ilat, ilng+1 );
+			DrawPoint( p );
+
+			p = PtsPointer( ilat, ilng );
+			DrawPoint( p );
+		}
+	}
+	glEnd( );
+
+	delete [ ] Pts;
+	Pts = NULL;
+}
+
+
+
+
